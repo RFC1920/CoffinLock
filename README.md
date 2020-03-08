@@ -8,7 +8,7 @@ Adds an associated code lock to a deployed coffin.  This feature can be enabled 
 
 On first use, the player must enable first via the chat command /cl on.  This setting will remain until the player enters /cl off.
 
-Coffinss are placed normally via the Rust user interface.
+Coffins are placed normally via the Rust user interface.
 
 When the user attempts to pickup the lock, access will be denied.  However, they can pickup the coffin as they would normally, and the lock will also be removed.   A player cannot pickup a locked coffin.
 
