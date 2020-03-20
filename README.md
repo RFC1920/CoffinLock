@@ -16,8 +16,8 @@ There is currently no configuration required for CoffinLock.  Data files are use
 
 ## Permissions
 
-- `cofflinlock.use` -- Allows player to placed a locked switch
-- `cofflinlock.admin` --- Placeholder for future use
+- `coffinlock.use` -- Allows player to placed a locked switch
+- `coffinlock.admin` --- Placeholder for future use
 
 ## Chat Commands
 
