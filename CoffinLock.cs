@@ -16,7 +16,7 @@ using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Coffin Lock", "RFC1920", "1.0.1")]
+    [Info("Coffin Lock", "RFC1920", "1.0.2")]
     [Description("Lock coffins with a code lock")]
     class CoffinLock : RustPlugin
     {
@@ -38,6 +38,9 @@ namespace Oxide.Plugins
             public ulong coffinid;
             public ulong lockid;
         }
+        private bool g_configChanged;
+        private bool ownerBypass = false;
+        private bool adminBypass = false;
         #endregion
 
         #region Message
@@ -54,6 +57,41 @@ namespace Oxide.Plugins
             permission.RegisterPermission(permCoffinlockAdmin, this);
 
             LoadData();
+        }
+
+        void Loaded() => LoadConfigValues();
+
+        protected override void LoadDefaultConfig() => Puts("New configuration file created.");
+
+        void LoadConfigValues()
+        {
+            ownerBypass = Convert.ToBoolean(GetConfigValue("Settings", "Owner can bypass lock", false));
+            adminBypass = Convert.ToBoolean(GetConfigValue("Settings", "Admin can bypass lock", false));
+
+            if(g_configChanged)
+            {
+                Puts("Configuration file updated.");
+                SaveConfig();
+            }
+        }
+
+        object GetConfigValue(string category, string setting, object defaultValue)
+        {
+            Dictionary<string, object> data = Config[category] as Dictionary<string, object>;
+            object value;
+
+            if(data == null)
+            {
+                data = new Dictionary<string, object>();
+                Config[category] = data;
+                g_configChanged = true;
+            }
+
+            if(data.TryGetValue(setting, out value)) return value;
+            value = defaultValue;
+            data[setting] = value;
+            g_configChanged = true;
+            return value;
         }
 
         protected override void LoadDefaultMessages()
@@ -173,20 +211,36 @@ namespace Oxide.Plugins
         {
             BaseEntity entity = container as BaseEntity;
             BaseEntity myent = CheckParent(entity);
+
             if(myent.name.Contains("coffin") && IsOurcoffin(myent.net.ID))
             {
                 if(IsLocked(myent.net.ID))
                 {
 #if DEBUG
-                    Puts("CanPickupEntity: player trying to open our locked coffin!");
+                    Puts("CanLootEntity: Player trying to open our locked coffin!");
 #endif
+                    if(myent.OwnerID == player.userID && ownerBypass)
+                    {
+#if DEBUG
+                        Puts("CanLootEntity: Per config, owner can bypass");
+#endif
+                        return null;
+                    }
+                    if(player.IPlayer.HasPermission(permCoffinlockAdmin) && adminBypass)
+                    {
+#if DEBUG
+                        Puts("CanLootEntity: Per config, admin can bypass.");
+#endif
+                        return null;
+                    }
+
                     Message(player.IPlayer, "locked");
-                    return false;
+                    return true;
                 }
                 else
                 {
 #if DEBUG
-                    Puts("CanPickupEntity: player opening our unlocked coffin!");
+                    Puts("CanLootEntity: Player opening our unlocked coffin!");
 #endif
                     return null;
                 }
@@ -205,7 +259,7 @@ namespace Oxide.Plugins
                 if(IsLocked(myent.net.ID))
                 {
 #if DEBUG
-                    Puts("CanPickupEntity: player trying to pickup our locked coffin!");
+                    Puts("CanPickupEntity: Player trying to pickup our locked coffin!");
 #endif
                     Message(player.IPlayer, "locked");
                     return false;
@@ -213,7 +267,7 @@ namespace Oxide.Plugins
                 else
                 {
 #if DEBUG
-                    Puts("CanPickupEntity: player picking up our unlocked coffin!");
+                    Puts("CanPickupEntity: Player picking up our unlocked coffin!");
 #endif
                     coffins.Remove(myent.net.ID);
                     int mycoffin = coffinpairs.FirstOrDefault(x => x.Value.coffinid == myent.net.ID).Key;
@@ -237,15 +291,7 @@ namespace Oxide.Plugins
             if(ecoffin.name.Contains("coffin") && IsOurcoffin(ecoffin.net.ID))
             {
 #if DEBUG
-                Puts("CanPickupLock: player trying to remove lock from a locked coffin!");
-#endif
-                Message(player.IPlayer, "cannotdo");
-                return false;
-            }
-            if(ecoffin.name.Contains("fuel_gen") && IsOurcoffin(ecoffin.net.ID))
-            {
-#if DEBUG
-                Puts("CanPickupLock: player trying to remove lock from a locked generator!");
+                Puts("CanPickupLock: Player trying to remove lock from a locked coffin!");
 #endif
                 Message(player.IPlayer, "cannotdo");
                 return false;
