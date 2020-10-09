@@ -1,23 +1,37 @@
-//#define DEBUG
+#region License (GPL v3)
+/*
+    DESCRIPTION
+    Copyright (c) 2020 RFC1920 <desolationoutpostpve@gmail.com>
+
+    This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License
+    as published by the Free Software Foundation; either version 2
+    of the License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+    Optionally you can also view the license at <http://www.gnu.org/licenses/>.
+*/
+#endregion License Information (GPL v3)
+#define DEBUG
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
-using Newtonsoft.Json.Linq;
 using Oxide.Core;
-using Oxide.Core.Configuration;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust;
-using Rust;
 using UnityEngine;
 using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Coffin Lock", "RFC1920", "1.0.2")]
-    [Description("Lock coffins with a code lock")]
+    [Info("Coffin Lock", "RFC1920", "1.0.3")]
+    [Description("Lock coffins and dropboxes with a code lock")]
     class CoffinLock : RustPlugin
     {
         #region vars
@@ -102,13 +116,18 @@ namespace Oxide.Plugins
                 ["notauthorized"] = "You don't have permission to use this command.",
                 ["instructions"] = "/cl on to enable, /cl off to disable.",
                 ["spawned"] = "CoffinLock spawned a new lockable coffin!",
+                ["dspawned"] = "CoffinLock spawned a new lockable dropbox!",
                 ["failed"] = "CoffinLock failed to spawn a new lockable coffin!",
+                ["dfailed"] = "CoffinLock failed to spawn a new lockable dropbox!",
                 ["locked"] = "This coffin is locked!",
+                ["dlocked"] = "This dropbox is locked!",
                 ["unlocked"] = "This coffin is unlocked!",
+                ["dunlocked"] = "This dropbox is unlocked!",
                 ["disabled"] = "CoffinLock is disabled.",
                 ["enabled"] = "CoffinLock is enabled.",
                 ["owner"] = "Coffin owned by {0}.",
-                ["nocoffin"] = "Could not find a coffin in front of you."
+                ["nocoffin"] = "Could not find a coffin in front of you.",
+                ["nodropbox"] = "Could not find a dropbox in front of you."
             }, this);
         }
 
@@ -164,7 +183,7 @@ namespace Oxide.Plugins
                     Message(player.IPlayer, "disabled");
                     return;
                 }
-                if(userenabled[player.userID] == false || userenabled[player.userID] == null)
+                if(userenabled[player.userID] == false)
                 {
 #if DEBUG
                     Puts($"Player {player.displayName} has CoffinLock disabled.");
@@ -191,6 +210,59 @@ namespace Oxide.Plugins
                 }
                 player = null;
             }
+            else if(entity.name.Contains("dropbox"))
+            {
+                BasePlayer player = FindOwner(entity.OwnerID);
+                if(player == null)
+                {
+#if DEBUG
+                    Puts($"Could not find owner of this dropbox.");
+#endif
+                    return;
+                }
+
+                if(!player.IPlayer.HasPermission(permCoffinlockUse))
+                {
+#if DEBUG
+                    Puts($"Player {player.displayName} denied permission.");
+#endif
+                    return;
+                }
+                if(!userenabled.ContainsKey(player.userID))
+                {
+#if DEBUG
+                    Puts($"Player {player.displayName} has never enabled CoffinLock.");
+#endif
+                    Message(player.IPlayer, "disabled");
+                    return;
+                }
+                if(userenabled[player.userID] == false)
+                {
+#if DEBUG
+                    Puts($"Player {player.displayName} has CoffinLock disabled.");
+#endif
+                    Message(player.IPlayer, "disabled");
+                    return;
+                }
+
+                if(AddLock(entity, true))
+                {
+                    coffins.Add(entity.net.ID);
+                    Message(player.IPlayer, "dspawned");
+                    SaveData();
+#if DEBUG
+                    Puts($"Spawned dropbox with lock");
+#endif
+                }
+                else
+                {
+#if DEBUG
+                    Puts($"Failed to spawn dropbox with lock");
+#endif
+                    Message(player.IPlayer, "dfailed");
+                }
+                player = null;
+            }
         }
 
         private BaseEntity CheckParent(BaseEntity entity)
@@ -210,39 +282,77 @@ namespace Oxide.Plugins
         private object CanLootEntity(BasePlayer player, StorageContainer container)
         {
             BaseEntity entity = container as BaseEntity;
+            if (entity == null) return null;
             BaseEntity myent = CheckParent(entity);
+            if (myent == null) return null;
 
-            if(myent.name.Contains("coffin") && IsOurcoffin(myent.net.ID))
+            if(IsOurcoffin(myent.net.ID))
             {
-                if(IsLocked(myent.net.ID))
+                if(myent.name.Contains("coffin"))
                 {
-#if DEBUG
-                    Puts("CanLootEntity: Player trying to open our locked coffin!");
-#endif
-                    if(myent.OwnerID == player.userID && ownerBypass)
+                    if(IsLocked(myent.net.ID))
                     {
 #if DEBUG
-                        Puts("CanLootEntity: Per config, owner can bypass");
+                        Puts("CanLootEntity: Player trying to open our locked coffin!");
 #endif
-                        return null;
-                    }
-                    if(player.IPlayer.HasPermission(permCoffinlockAdmin) && adminBypass)
-                    {
+                        if(myent.OwnerID == player.userID && ownerBypass)
+                        {
 #if DEBUG
-                        Puts("CanLootEntity: Per config, admin can bypass.");
+                            Puts("CanLootEntity: Per config, owner can bypass");
 #endif
-                        return null;
-                    }
+                            return null;
+                        }
+                        if(player.IPlayer.HasPermission(permCoffinlockAdmin) && adminBypass)
+                        {
+#if DEBUG
+                            Puts("CanLootEntity: Per config, admin can bypass.");
+#endif
+                            return null;
+                        }
 
-                    Message(player.IPlayer, "locked");
-                    return true;
-                }
-                else
-                {
+                        Message(player.IPlayer, "locked");
+                        return true;
+                    }
+                    else
+                    {
 #if DEBUG
-                    Puts("CanLootEntity: Player opening our unlocked coffin!");
+                        Puts("CanLootEntity: Player opening our unlocked coffin!");
 #endif
-                    return null;
+                        return null;
+                    }
+                }
+                else if(myent.name.Contains("dropbox"))
+                {
+                    if(IsLocked(myent.net.ID))
+                    {
+#if DEBUG
+                        Puts("CanLootEntity: Player trying to open our locked dropbox!");
+#endif
+                        if(myent.OwnerID == player.userID && ownerBypass)
+                        {
+#if DEBUG
+                            Puts("CanLootEntity: Per config, owner can bypass");
+#endif
+                            return null;
+                        }
+                        if(player.IPlayer.HasPermission(permCoffinlockAdmin) && adminBypass)
+                        {
+#if DEBUG
+                            Puts("CanLootEntity: Per config, admin can bypass.");
+#endif
+                            return null;
+                        }
+
+                        Message(player.IPlayer, "dlocked");
+                        return true;
+                    }
+                    else
+                    {
+#if DEBUG
+                        Puts("CanLootEntity: Player opening our unlocked dropbox!");
+#endif
+                        return null;
+                    }
                 }
             }
             return null;
@@ -254,26 +364,51 @@ namespace Oxide.Plugins
             if(myent == null) return null;
             if(player == null) return null;
 
-            if(myent.name.Contains("coffin") && IsOurcoffin(myent.net.ID))
+            if(IsOurcoffin(myent.net.ID))
             {
-                if(IsLocked(myent.net.ID))
+                if(myent.name.Contains("coffin"))
                 {
+                    if(IsLocked(myent.net.ID))
+                    {
 #if DEBUG
-                    Puts("CanPickupEntity: Player trying to pickup our locked coffin!");
+                        Puts("CanPickupEntity: Player trying to pickup our locked coffin!");
 #endif
-                    Message(player.IPlayer, "locked");
-                    return false;
+                        Message(player.IPlayer, "locked");
+                        return false;
+                    }
+                    else
+                    {
+#if DEBUG
+                        Puts("CanPickupEntity: Player picking up our unlocked coffin!");
+#endif
+                        coffins.Remove(myent.net.ID);
+                        int mycoffin = coffinpairs.FirstOrDefault(x => x.Value.coffinid == myent.net.ID).Key;
+                        coffinpairs.Remove(mycoffin);
+                        SaveData();
+                        return null;
+                    }
                 }
-                else
+                else if(myent.name.Contains("dropbox"))
                 {
+                    if(IsLocked(myent.net.ID))
+                    {
 #if DEBUG
-                    Puts("CanPickupEntity: Player picking up our unlocked coffin!");
+                        Puts("CanPickupEntity: Player trying to pickup our locked dropbox!");
 #endif
-                    coffins.Remove(myent.net.ID);
-                    int mycoffin = coffinpairs.FirstOrDefault(x => x.Value.coffinid == myent.net.ID).Key;
-                    coffinpairs.Remove(mycoffin);
-                    SaveData();
-                    return null;
+                        Message(player.IPlayer, "dlocked");
+                        return false;
+                    }
+                    else
+                    {
+#if DEBUG
+                        Puts("CanPickupEntity: Player picking up our unlocked dropbox!");
+#endif
+                        coffins.Remove(myent.net.ID);
+                        int mycoffin = coffinpairs.FirstOrDefault(x => x.Value.coffinid == myent.net.ID).Key;
+                        coffinpairs.Remove(mycoffin);
+                        SaveData();
+                        return null;
+                    }
                 }
             }
             return null;
@@ -288,10 +423,10 @@ namespace Oxide.Plugins
             BaseEntity ecoffin = baseLock.GetParentEntity();
             if(ecoffin == null) return null;
 
-            if(ecoffin.name.Contains("coffin") && IsOurcoffin(ecoffin.net.ID))
+            if((ecoffin.name.Contains("coffin") || ecoffin.name.Contains("dropbox")) && IsOurcoffin(ecoffin.net.ID))
             {
 #if DEBUG
-                Puts("CanPickupLock: Player trying to remove lock from a locked coffin!");
+                Puts("CanPickupLock: Player trying to remove lock from a locked coffin/dropbox!");
 #endif
                 Message(player.IPlayer, "cannotdo");
                 return false;
@@ -378,13 +513,21 @@ namespace Oxide.Plugins
         }
 
         // Lock entity spawner
-        private bool AddLock(BaseEntity ecoffin)
+        private bool AddLock(BaseEntity ecoffin, bool dropbox = false)
         {
             newlock = new BaseEntity();
             if(newlock = GameManager.server.CreateEntity(codeLockPrefab, entitypos, entityrot, true))
             {
-                newlock.transform.localEulerAngles = new Vector3(0, 96, 0);
-                newlock.transform.localPosition = new Vector3(-0.15f, 0.35f, 0.4f);
+                if(dropbox)
+                {
+                    newlock.transform.localEulerAngles = new Vector3(0, 90, 0);
+                    newlock.transform.localPosition = new Vector3(0.15f, 0f, -0.4f);
+                }
+                else
+                {
+                    newlock.transform.localEulerAngles = new Vector3(0, 96, 0);
+                    newlock.transform.localPosition = new Vector3(-0.15f, 0.35f, 0.4f);
+                }
 
                 newlock.SetParent(ecoffin, 0);
                 newlock?.Spawn();
@@ -405,7 +548,7 @@ namespace Oxide.Plugins
         // Used to find the owner of a coffin
         private BasePlayer FindOwner(ulong playerID)
         {
-            if(playerID == null) return null;
+            if(playerID == 0) return null;
             IPlayer iplayer = covalence.Players.FindPlayer(playerID.ToString());
 
             if(iplayer != null)
@@ -420,7 +563,7 @@ namespace Oxide.Plugins
 
         private bool IsOurcoffin(ulong coffinid)
         {
-            if(coffinid == null) return false;
+            if(coffinid == 0) return false;
             foreach(KeyValuePair<int, coffinpair> coffindata in coffinpairs)
             {
                 if(coffindata.Value.coffinid == coffinid)
@@ -437,7 +580,7 @@ namespace Oxide.Plugins
         // Check whether this coffin has an associated lock, and whether or not it is locked
         private bool IsLocked(ulong coffinid)
         {
-            if(coffinid == null) return false;
+            if(coffinid == 0) return false;
             foreach(KeyValuePair<int, coffinpair> coffindata in coffinpairs)
             {
                 if(coffindata.Value.coffinid == coffinid)
