@@ -30,7 +30,7 @@ using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Coffin Lock", "RFC1920", "1.0.3")]
+    [Info("Coffin Lock", "RFC1920", "1.0.4")]
     [Description("Lock coffins and dropboxes with a code lock")]
     class CoffinLock : RustPlugin
     {
@@ -113,6 +113,7 @@ namespace Oxide.Plugins
             lang.RegisterMessages(new Dictionary<string, string>
             {
                 ["cannotdo"] = "You cannot remove a lock which is part of a coffin.",
+                ["cannotdo2"] = "You cannot add a lock to an already locked coffin.",
                 ["notauthorized"] = "You don't have permission to use this command.",
                 ["instructions"] = "/cl on to enable, /cl off to disable.",
                 ["spawned"] = "CoffinLock spawned a new lockable coffin!",
@@ -414,6 +415,21 @@ namespace Oxide.Plugins
             return null;
         }
 
+        // Check for our coffin, block adding another lock
+        private object CanDeployItem(BasePlayer player, Deployer deployer, uint entityId)
+        {
+            if(IsOurcoffin(entityId))
+            {
+#if DEBUG
+                Puts($"Player {player.displayName} trying to place an item(lock?) on our coffin!");
+#endif
+                Message(player.IPlayer, "cannotdo2");
+                return true;
+            }
+
+            return null;
+        }
+
         // Check for our coffin lock, block pickup
         private object CanPickupLock(BasePlayer player, BaseLock baseLock)
         {
@@ -423,7 +439,7 @@ namespace Oxide.Plugins
             BaseEntity ecoffin = baseLock.GetParentEntity();
             if(ecoffin == null) return null;
 
-            if((ecoffin.name.Contains("coffin") || ecoffin.name.Contains("dropbox")) && IsOurcoffin(ecoffin.net.ID))
+            if((ecoffin.name.Contains("coffin") || ecoffin.name.Contains("dropbox")) && IsOurcoffin(ecoffin.net.ID, baseLock.net.ID))
             {
 #if DEBUG
                 Puts("CanPickupLock: Player trying to remove lock from a locked coffin/dropbox!");
@@ -561,15 +577,19 @@ namespace Oxide.Plugins
             }
         }
 
-        private bool IsOurcoffin(ulong coffinid)
+        private bool IsOurcoffin(ulong coffinid, ulong lockid=0)
         {
             if(coffinid == 0) return false;
             foreach(KeyValuePair<int, coffinpair> coffindata in coffinpairs)
             {
-                if(coffindata.Value.coffinid == coffinid)
+#if DEBUG
+                Puts($"Checking to see if {coffinid.ToString()} is one of our coffins...");
+#endif
+                if(coffindata.Value.coffinid == coffinid && (lockid > 0 && coffindata.Value.lockid == lockid)
+                    || coffindata.Value.coffinid == coffinid && lockid == 0)
                 {
 #if DEBUG
-                    Puts("This is one of our coffins!");
+                    Puts($"This is one of our coffins! {coffinid.ToString()}, {lockid.ToString()}");
 #endif
                     return true;
                 }
