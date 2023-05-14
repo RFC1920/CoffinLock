@@ -28,7 +28,7 @@ using Newtonsoft.Json;
 
 namespace Oxide.Plugins
 {
-    [Info("Coffin Lock", "RFC1920", "1.0.5")]
+    [Info("Coffin Lock", "RFC1920", "1.0.6")]
     [Description("Lock coffins and dropboxes with a code lock")]
     internal class CoffinLock : RustPlugin
     {
@@ -372,9 +372,9 @@ namespace Oxide.Plugins
         }
 
         // Check for our coffin, block adding another lock
-        private object CanDeployItem(BasePlayer player, Deployer deployer, uint entityId)
+        private object CanDeployItem(BasePlayer player, Deployer deployer, NetworkableId entityId)
         {
-            if (IsOurcoffin(entityId))
+            if (IsOurcoffin(entityId.Value))
             {
                 if (configData.Settings.debug) Puts($"Player {player.displayName} trying to place an item(lock?) on our coffin!");
                 Message(player.IPlayer, "cannotdo2");
